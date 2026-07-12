@@ -8,20 +8,21 @@ async function handleEnqueue(req, res) {
 
   if (!type || !SUPPORTED_TYPES.includes(type)) {
     return res.status(400).json({
+      success: false,
       error: `Invalid job type. Supported types: ${SUPPORTED_TYPES.join(', ')}`,
     });
   }
 
   if (!payload || typeof payload !== 'object') {
-    return res.status(400).json({ error: 'Payload must be a JSON object' });
+    return res.status(400).json({ success: false, error: 'Payload must be a JSON object' });
   }
 
   try {
     const jobId = await enqueueJob({ type, payload });
-    return res.status(202).json({ jobId, status: 'queued' });
+    return res.status(202).json({ success: true, jobId, message: 'Job queued' });
   } catch (err) {
     logger.error({ err }, 'Failed to enqueue job');
-    return res.status(500).json({ error: 'Failed to enqueue job' });
+    return res.status(500).json({ success: false, error: 'Failed to enqueue job' });
   }
 }
 

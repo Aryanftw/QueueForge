@@ -1,25 +1,29 @@
 const { v4: uuidv4 } = require('uuid');
 const redisClient = require('../config/redisClient');
-const { MAIN_QUEUE } = require('../../../shared/constants');
+const { MAIN_QUEUE, jobKey } = require('../../../shared/constants');
 const logger = require('../utils/logger');
 
-/**
- * Builds a job object and pushes it onto the main queue.
- * Phase 1: no metadata storage yet, just the raw job payload.
- */
 async function enqueueJob({ type, payload }) {
-  const job = {
-    id: uuidv4(),
+  const jobId = uuidv4();
+  const now = new Date().toISOString();
+
+  // Store full job metadata in a Hash. Payload must be stringified —
+  // Hash field values are strings just like List values.
+  await redisClient.hset(jobKey(jobId), {
+    id: jobId,
     type,
-    payload,
-    createdAt: new Date().toISOString(),
-  };
+    payload: JSON.stringify(payload),
+    status: 'waiting',
+    createdAt: now,
+    startedAt: '',
+    completedAt: '',
+  });
 
-  // Redis lists only store strings, so we serialize the job
-  await redisClient.lpush(MAIN_QUEUE, JSON.stringify(job));
+  // Queue only carries the ID now — execution order, not job data.
+  await redisClient.lpush(MAIN_QUEUE, jobId);
 
-  logger.info({ jobId: job.id, type }, 'Job enqueued');
-  return job.id;
+  logger.info({ jobId, type }, 'Job enqueued');
+  return jobId;
 }
 
 module.exports = { enqueueJob };
