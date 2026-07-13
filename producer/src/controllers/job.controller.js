@@ -15,6 +15,8 @@ async function handleGetJobStatus(req, res) {
     return res.status(200).json({
       ...job,
       payload: JSON.parse(job.payload),
+      retryCount: Number(job.retryCount),
+      maxRetries: Number(job.maxRetries),
     });
   } catch (err) {
     logger.error({ err, jobId: id }, 'Failed to fetch job status');
