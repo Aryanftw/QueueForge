@@ -8,26 +8,27 @@ const {
 } = require('./services/queue.service');
 const logger = require('./utils/logger');
 
-// --- DEMO CODE: simulates transient failures so retries are observable. ---
-// Remove this block once you're done testing Phase 3's retry behavior.
+// Worker ID comes from an env var (so each terminal/instance can set its own),
+// falling back to a random suffix if not provided.
+const WORKER_ID = process.env.WORKER_ID || `worker-${Math.floor(Math.random() * 10000)}`;
+
 function simulateRandomFailure() {
   if (Math.random() < 0.4) {
     throw new Error('Simulated transient failure (demo)');
   }
 }
-// --- END DEMO CODE ---
 
 async function processJob(job) {
-  logger.info({ jobId: job.id, type: job.type, payload: job.payload }, 'Processing job');
+  logger.info({ workerId: WORKER_ID, jobId: job.id, type: job.type }, `Worker ${WORKER_ID} processing job ${job.id}`);
 
-  simulateRandomFailure(); // demo only — see above
+  simulateRandomFailure();
 
   await new Promise((resolve) => setTimeout(resolve, 500));
-  logger.info({ jobId: job.id }, 'Job finished');
+  logger.info({ workerId: WORKER_ID, jobId: job.id }, 'Job finished');
 }
 
 async function runWorker() {
-  logger.info('Worker started, waiting for jobs...');
+  logger.info(`Worker ${WORKER_ID} started, waiting for jobs...`);
   while (true) {
     try {
       const jobId = await waitForJobId();
@@ -39,7 +40,7 @@ async function runWorker() {
         continue;
       }
 
-      await markProcessing(jobId);
+      await markProcessing(jobId, WORKER_ID);
 
       try {
         await processJob(job);
@@ -48,15 +49,15 @@ async function runWorker() {
         const result = await handleJobFailure(job, jobError);
         if (result.retrying) {
           logger.warn(
-            { jobId: job.id, retryCount: job.retryCount + 1, delay: result.delay },
+            { workerId: WORKER_ID, jobId: job.id, retryCount: job.retryCount + 1, delay: result.delay },
             'Job failed, scheduled for retry'
           );
         } else {
-          logger.error({ jobId: job.id }, 'Job failed permanently — retries exhausted');
+          logger.error({ workerId: WORKER_ID, jobId: job.id }, 'Job failed permanently — moved to DLQ');
         }
       }
     } catch (err) {
-      logger.error({ err }, 'Error while processing job');
+      logger.error({ err, workerId: WORKER_ID }, 'Error while processing job');
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }

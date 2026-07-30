@@ -1,10 +1,9 @@
 // shared/constants.js
 const MAIN_QUEUE = 'queueforge:main';
+const DEAD_LETTER_QUEUE = 'queueforge:dlq';
 
-// Builds the Redis Hash key for a given job ID.
-// Centralized so producer, worker, and status endpoint never disagree on the pattern.
 function jobKey(jobId) {
   return `job:${jobId}`;
 }
 
-module.exports = { MAIN_QUEUE, jobKey };
+module.exports = { MAIN_QUEUE, DEAD_LETTER_QUEUE, jobKey };

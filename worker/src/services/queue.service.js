@@ -1,5 +1,5 @@
 const { blockingClient, commandClient } = require('../config/redisClient');
-const { MAIN_QUEUE, jobKey } = require('../../../shared/constants');
+const { MAIN_QUEUE, DEAD_LETTER_QUEUE, jobKey } = require('../../../shared/constants');
 const { BASE_DELAY_MS } = require('../../../shared/retryConfig');
 
 async function waitForJobId() {
@@ -20,10 +20,11 @@ async function getJob(jobId) {
   };
 }
 
-async function markProcessing(jobId) {
+async function markProcessing(jobId, workerId) {
   await commandClient.hset(jobKey(jobId), {
     status: 'processing',
     startedAt: new Date().toISOString(),
+    workerId,
   });
 }
 
@@ -31,6 +32,7 @@ async function markCompleted(jobId) {
   await commandClient.hset(jobKey(jobId), {
     status: 'completed',
     completedAt: new Date().toISOString(),
+    workerId: '', // job is no longer owned by anyone once finished
   });
 }
 
@@ -43,18 +45,20 @@ async function handleJobFailure(job, error) {
   });
 
   if (newRetryCount < job.maxRetries) {
-    await commandClient.hset(jobKey(job.id), { status: 'retrying' });
+    // Still owned by no one while it waits to be re-picked-up — any worker may take it next.
+    await commandClient.hset(jobKey(job.id), { status: 'retrying', workerId: '' });
 
     const delay = BASE_DELAY_MS * Math.pow(2, newRetryCount - 1);
     setTimeout(async () => {
-      // This now runs on the command connection, not the blocked one — no deadlock.
       await commandClient.lpush(MAIN_QUEUE, job.id);
     }, delay);
 
     return { retrying: true, delay };
   }
 
-  await commandClient.hset(jobKey(job.id), { status: 'failed' });
+  await commandClient.hset(jobKey(job.id), { status: 'failed', workerId: '' });
+  await commandClient.lpush(DEAD_LETTER_QUEUE, job.id);
+
   return { retrying: false };
 }
 

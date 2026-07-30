@@ -19,6 +19,7 @@ async function enqueueJob({ type, payload }) {
     retryCount: 0,
     maxRetries: DEFAULT_MAX_RETRIES,
     lastError: '',
+    workerId: '',
   });
 
   await redisClient.lpush(MAIN_QUEUE, jobId);
