@@ -6,11 +6,11 @@ const {
   markCompleted,
   handleJobFailure,
 } = require('./services/queue.service');
+const { registerWorker, deregisterWorker } = require('./services/registry.service');
 const logger = require('./utils/logger');
 
-// Worker ID comes from an env var (so each terminal/instance can set its own),
-// falling back to a random suffix if not provided.
 const WORKER_ID = process.env.WORKER_ID || `worker-${Math.floor(Math.random() * 10000)}`;
+let shuttingDown = false;
 
 function simulateRandomFailure() {
   if (Math.random() < 0.4) {
@@ -19,17 +19,20 @@ function simulateRandomFailure() {
 }
 
 async function processJob(job) {
-  logger.info({ workerId: WORKER_ID, jobId: job.id, type: job.type }, `Worker ${WORKER_ID} processing job ${job.id}`);
-
+  logger.info(
+    { workerId: WORKER_ID, jobId: job.id, type: job.type },
+    `Worker ${WORKER_ID} processing job ${job.id}`
+  );
   simulateRandomFailure();
-
   await new Promise((resolve) => setTimeout(resolve, 500));
   logger.info({ workerId: WORKER_ID, jobId: job.id }, 'Job finished');
 }
 
 async function runWorker() {
+  await registerWorker(WORKER_ID);
   logger.info(`Worker ${WORKER_ID} started, waiting for jobs...`);
-  while (true) {
+
+  while (!shuttingDown) {
     try {
       const jobId = await waitForJobId();
       if (!jobId) continue;
@@ -40,11 +43,11 @@ async function runWorker() {
         continue;
       }
 
-      await markProcessing(jobId, WORKER_ID);
+      const startedAt = await markProcessing(jobId, WORKER_ID, job.status);
 
       try {
         await processJob(job);
-        await markCompleted(jobId);
+        await markCompleted(jobId, startedAt);
       } catch (jobError) {
         const result = await handleJobFailure(job, jobError);
         if (result.retrying) {
@@ -62,5 +65,16 @@ async function runWorker() {
     }
   }
 }
+
+async function shutdown(signal) {
+  if (shuttingDown) return; // avoid double-shutdown if signal fires twice
+  shuttingDown = true;
+  logger.info({ workerId: WORKER_ID, signal }, 'Worker shutting down gracefully');
+  await deregisterWorker(WORKER_ID);
+  process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 runWorker();

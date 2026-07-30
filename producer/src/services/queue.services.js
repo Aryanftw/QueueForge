@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const redisClient = require('../config/redisClient');
-const { MAIN_QUEUE, jobKey } = require('../../../shared/constants');
+const { MAIN_QUEUE, METRICS, jobKey } = require('../../../shared/constants');
 const { DEFAULT_MAX_RETRIES } = require('../../../shared/retryConfig');
 const logger = require('../utils/logger');
 
@@ -23,6 +23,7 @@ async function enqueueJob({ type, payload }) {
   });
 
   await redisClient.lpush(MAIN_QUEUE, jobId);
+  await redisClient.incr(METRICS.JOBS_WAITING);
 
   logger.info({ jobId, type }, 'Job enqueued');
   return jobId;
