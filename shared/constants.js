@@ -19,6 +19,10 @@ function jobKey(jobId) {
   return `job:${jobId}`;
 }
 
+function workerInfoKey(workerId) {
+  return `workerinfo:${workerId}`;
+}
+
 function computeScore(priority, timestampMs) {
   return priority * PRIORITY_MULTIPLIER + timestampMs;
 }
@@ -32,5 +36,6 @@ module.exports = {
   DEFAULT_PRIORITY,
   PRIORITY_MULTIPLIER,
   jobKey,
+  workerInfoKey,
   computeScore,
 };

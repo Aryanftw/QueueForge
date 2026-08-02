@@ -6,7 +6,7 @@ const {
   markCompleted,
   handleJobFailure,
 } = require('./services/queue.service');
-const { registerWorker, deregisterWorker } = require('./services/registry.service');
+const { registerWorker, deregisterWorker, updateWorkerActivity } = require('./services/registry.services');
 const logger = require('./utils/logger');
 
 const WORKER_ID = process.env.WORKER_ID || `worker-${Math.floor(Math.random() * 10000)}`;
@@ -43,15 +43,17 @@ async function runWorker() {
         continue;
       }
 
-      logger.info({ jobId: job.id, priority: job.priority }, 'Dequeued job');
-
       const startedAt = await markProcessing(jobId, WORKER_ID, job.status);
+      await updateWorkerActivity(WORKER_ID, 'processing', job.id);
 
       try {
         await processJob(job);
         await markCompleted(jobId, startedAt);
+        await updateWorkerActivity(WORKER_ID, 'idle', '');
       } catch (jobError) {
         const result = await handleJobFailure(job, jobError);
+        await updateWorkerActivity(WORKER_ID, 'idle', '');
+
         if (result.retrying) {
           logger.warn(
             { workerId: WORKER_ID, jobId: job.id, retryCount: job.retryCount + 1, delay: result.delay },
@@ -69,7 +71,7 @@ async function runWorker() {
 }
 
 async function shutdown(signal) {
-  if (shuttingDown) return; // avoid double-shutdown if signal fires twice
+  if (shuttingDown) return;
   shuttingDown = true;
   logger.info({ workerId: WORKER_ID, signal }, 'Worker shutting down gracefully');
   await deregisterWorker(WORKER_ID);

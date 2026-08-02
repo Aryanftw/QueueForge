@@ -1,7 +1,7 @@
 const express = require('express');
-const { handleGetJobStatus } = require('../controllers/job.controller');
+const { handleListJobs } = require('../controllers/jobs.controller');
 
 const router = express.Router();
-router.get('/job/:id', handleGetJobStatus);
+router.get('/jobs', handleListJobs);
 
 module.exports = router;

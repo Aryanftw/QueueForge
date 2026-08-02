@@ -1,4 +1,4 @@
-const { enqueueJob } = require('../services/queue.service');
+const { enqueueJob } = require('../services/queue.services');
 const logger = require('../utils/logger');
 
 const SUPPORTED_TYPES = ['send_email', 'generate_pdf', 'resize_image'];
