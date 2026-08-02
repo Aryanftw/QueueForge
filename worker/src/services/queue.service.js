@@ -1,9 +1,15 @@
 const { blockingClient, commandClient } = require('../config/redisClient');
-const { MAIN_QUEUE, DEAD_LETTER_QUEUE, METRICS, jobKey } = require('../../../shared/constants');
+const {
+  MAIN_QUEUE,
+  DELAYED_QUEUE,
+  DEAD_LETTER_QUEUE,
+  METRICS,
+  jobKey,
+} = require('../../../shared/constants');
 const { BASE_DELAY_MS } = require('../../../shared/retryConfig');
 
 async function waitForJobId() {
-  const result = await blockingClient.brpop(MAIN_QUEUE, 0);
+  const result = await blockingClient.bzpopmin(MAIN_QUEUE, 0);
   if (!result) return null;
   const [, jobId] = result;
   return jobId;
@@ -15,15 +21,12 @@ async function getJob(jobId) {
   return {
     ...job,
     payload: JSON.parse(job.payload),
+    priority: Number(job.priority),
     retryCount: Number(job.retryCount),
     maxRetries: Number(job.maxRetries),
   };
 }
 
-// previousStatus tells us which counter to decrement: "waiting" (first attempt)
-// or "retrying" (re-attempt after backoff). Returns the startedAt timestamp it
-// wrote, so the caller can pass the SAME value into markCompleted later —
-// avoids re-reading a stale Hash value.
 async function markProcessing(jobId, workerId, previousStatus) {
   const startedAt = new Date().toISOString();
 
@@ -59,6 +62,9 @@ async function markCompleted(jobId, startedAt) {
   await commandClient.incrby(METRICS.TOTAL_PROCESSING_TIME_MS, durationMs);
 }
 
+// No more setTimeout. The retry's timing lives entirely in Redis now —
+// if this worker crashes right after this function returns, the retry
+// is already durably scheduled and unaffected.
 async function handleJobFailure(job, error) {
   const newRetryCount = job.retryCount + 1;
 
@@ -73,11 +79,12 @@ async function handleJobFailure(job, error) {
     await commandClient.incr(METRICS.JOBS_RETRYING);
 
     const delay = BASE_DELAY_MS * Math.pow(2, newRetryCount - 1);
-    setTimeout(async () => {
-      await commandClient.lpush(MAIN_QUEUE, job.id);
-    }, delay);
+    const eligibleAt = Date.now() + delay;
 
-    return { retrying: true, delay };
+    // Durable scheduling: the job sits in Redis's Delayed Queue, not in RAM.
+    await commandClient.zadd(DELAYED_QUEUE, eligibleAt, job.id);
+
+    return { retrying: true, delay, eligibleAt };
   }
 
   await commandClient.hset(jobKey(job.id), { status: 'failed', workerId: '' });

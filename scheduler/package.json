@@ -1,0 +1,14 @@
+{
+  "name": "queueforge-scheduler",
+  "version": "1.0.0",
+  "main": "src/scheduler.js",
+  "scripts": {
+    "start": "node src/scheduler.js"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "dotenv": "^16.4.5",
+    "pino": "^9.2.0",
+    "pino-pretty": "^11.2.1"
+  }
+}

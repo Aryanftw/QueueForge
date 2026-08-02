@@ -43,6 +43,8 @@ async function runWorker() {
         continue;
       }
 
+      logger.info({ jobId: job.id, priority: job.priority }, 'Dequeued job');
+
       const startedAt = await markProcessing(jobId, WORKER_ID, job.status);
 
       try {
